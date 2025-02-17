@@ -2,7 +2,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "gist-downloader")]
+#[command(name = "local-gist")]
 #[command(author = "Gist Downloader CLI")]
 #[command(version = "1.0")]
 #[command(about = "Downloads GitHub Gists", long_about = None)]
@@ -20,8 +20,8 @@ pub enum Commands {
         username: String,
 
         /// Directory to save gists
-        #[arg(short, long, default_value = "downloaded_gists")]
-        output: String,
+        #[arg(short, long, default_value = "gists")]
+        folder: String,
 
         /// Number of concurrent downloads
         #[arg(short, long, default_value_t = 4)]

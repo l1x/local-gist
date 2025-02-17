@@ -1,7 +1,17 @@
-use reqwest::{Client, Error};
+use reqwest::{Client, Error as ReqwestError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Error as IoError;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum GistError {
+    #[error("HTTP request failed: {0}")]
+    RequestError(#[from] ReqwestError),
+    #[error("IO operation failed: {0}")]
+    IoError(#[from] IoError),
+}
 
 // GitHub API base URL
 const GITHUB_API_URL: &str = "https://api.github.com";
@@ -90,7 +100,7 @@ pub type Gists = Vec<Gist>;
 /// # Arguments
 /// * `username` - GitHub username to fetch gists for
 /// * `limit` - Optional maximum number of gists to return (defaults to 10)
-pub async fn list_gists(username: &str, limit: Option<u32>) -> Result<Gists, Error> {
+pub async fn list_gists(username: &str, limit: Option<u32>) -> Result<Gists, GistError> {
     // Create a client with custom headers
     let client: Client = Client::builder().user_agent("RustRequestClient").build()?;
 
@@ -103,4 +113,31 @@ pub async fn list_gists(username: &str, limit: Option<u32>) -> Result<Gists, Err
     );
 
     Ok(client.get(&url).send().await?.json().await?)
+}
+
+/// Downloads a single gist to a specified path
+///
+/// # Arguments
+/// * `gist` - The Gist to download
+/// * `output_path` - Directory where the gist should be saved
+pub async fn download_gist(gist: &Gist, output_path: &str) -> Result<(), GistError> {
+    let client = Client::builder().user_agent("RustRequestClient").build()?;
+
+    // Create the parent directory if it doesn't exist
+    let base_dir = format!("{}/{}", output_path, gist.id);
+    std::fs::create_dir_all(&base_dir)?;
+
+    // Download each file in the gist
+    for (filename, file) in &gist.files {
+        // Get the file content
+        let response = client.get(&file.raw_url).send().await?.text().await?;
+
+        // Create the full path for the file
+        let file_path = format!("{}/{}", base_dir, filename);
+
+        // Write the content to a file
+        std::fs::write(file_path, response)?;
+    }
+
+    Ok(())
 }

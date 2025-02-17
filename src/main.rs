@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands};
-use gist::{list_gists, Gists};
+use gist::{download_gist, list_gists, Gists};
+use tokio::task;
 use tracing::{info, Level};
 use tracing_subscriber;
 
@@ -18,16 +19,44 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Download {
             username,
-            output,
+            folder,
             concurrent,
             limit,
         } => {
             info!("Fetching gists for user: {}", username);
             let gists: Gists = list_gists(&username, Some(limit)).await?;
             info!("Found {} gists", gists.len());
+
+            // Create a vector to hold all download tasks
+            let mut handles = vec![];
+
+            // Create download tasks for each gist
+            for gist in gists {
+                let folder = folder.clone();
+                let handle = tokio::spawn(async move {
+                    match download_gist(&gist, &folder).await {
+                        Ok(_) => info!("Successfully downloaded gist: {}", gist.id),
+                        Err(e) => info!("Failed to download gist {}: {}", gist.id, e),
+                    }
+                });
+                handles.push(handle);
+
+                // If we've reached the concurrent limit, wait for one to complete
+                if handles.len() >= concurrent {
+                    if let Some(handle) = handles.pop() {
+                        handle.await?;
+                    }
+                }
+            }
+
+            // Wait for remaining downloads to complete
+            for handle in handles {
+                handle.await?;
+            }
+
             info!(
                 "Download process completed. Check the '{}' directory",
-                output
+                folder
             );
         }
         Commands::List { username, limit } => {
