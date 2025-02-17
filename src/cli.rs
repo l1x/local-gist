@@ -23,9 +23,9 @@ pub enum Commands {
         #[arg(short, long, default_value = "gists")]
         folder: String,
 
-        /// Number of concurrent downloads
+        /// Number of concurrency downloads
         #[arg(short, long, default_value_t = 4)]
-        concurrent: usize,
+        concurrency: usize,
 
         /// Maximum number of gists to download
         #[arg(short, long, default_value_t = 10)]
