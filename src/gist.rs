@@ -7,7 +7,7 @@ use std::io::Error as IoError;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::time::sleep;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 #[derive(Error, Debug)]
 pub enum GistError {
@@ -108,6 +108,7 @@ fn has_next_page(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+#[instrument]
 fn get_url(username: &str, per_page: u32, page: u32) -> String {
     return format!(
         "{}/users/{}/gists?per_page={}&page={}",
@@ -142,6 +143,7 @@ fn should_continue(remaining: Option<&str>) -> bool {
 /// # Arguments
 /// * `username` - GitHub username to fetch gists for
 /// * `limit` - Optional maximum number of gists to return)
+#[instrument]
 pub async fn list_gists(username: &str, limit: Option<u32>) -> Result<Gists, GistError> {
     let client: Client = Client::builder().user_agent("RustRequestClient").build()?;
     let mut all_gists: Vec<Gist> = Vec::new();
