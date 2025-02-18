@@ -5,10 +5,9 @@ use gist::{download_gist, list_gists, Gists};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tokio::task::futures;
+use tokio::task::JoinSet;
 use tracing::{info, Level};
 use tracing_subscriber;
-use tokio::task::JoinSet;
 
 mod cli;
 mod gist;
@@ -44,16 +43,17 @@ async fn handle_download(
     limit: Option<u32>,
 ) -> Result<()> {
     info!("Fetching gists for user: {username}");
-    let gists = list_gists(&username, limit).await?;
+    let gists: Vec<gist::Gist> = list_gists(&username, limit).await?;
+    let number_of_files: &usize = &gists.iter().map(|g| g.files.len()).sum::<usize>();
     info!("Found {} gists", gists.len());
 
     let abs_path = PathBuf::from(&folder)
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(&folder));
-    
+
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut set = JoinSet::new();
-    
+
     for gist in gists {
         let sem = Arc::clone(&semaphore);
         let folder = folder.clone();
@@ -72,8 +72,8 @@ async fn handle_download(
     }
 
     info!(
-        "Download complete: {} files downloaded to {}", 
-        gists.iter().map(|g| g.files.len()).sum::<usize>(),
+        "Download complete: {} files downloaded to {}",
+        number_of_files,
         abs_path.display()
     );
 
