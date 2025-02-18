@@ -5,8 +5,10 @@ use gist::{download_gist, list_gists, Gists};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tokio::task::futures;
 use tracing::{info, Level};
 use tracing_subscriber;
+use tokio::task::JoinSet;
 
 mod cli;
 mod gist;
@@ -23,55 +25,57 @@ async fn main() -> Result<()> {
             folder,
             concurrency,
             limit,
-        } => {
-            info!("Fetching gists for user: {}", username);
-            let gists: Gists = list_gists(&username, Some(limit)).await?;
-            info!("Found {} gists", gists.len());
-
-            let abs_path = PathBuf::from(&folder)
-                .canonicalize()
-                .unwrap_or_else(|_| PathBuf::from(&folder));
-            let total_files = gists.iter().map(|g| g.files.len()).sum::<usize>();
-
-            // Create a semaphore to limit concurrency downloads
-            let semaphore = Arc::new(Semaphore::new(concurrency));
-            let mut handles = vec![];
-
-            for gist in gists {
-                let folder: String = folder.clone();
-                let sem: Arc<Semaphore> = Arc::clone(&semaphore);
-
-                let handle = tokio::spawn(async move {
-                    // Acquire a permit from the semaphore
-                    let _permit = sem.acquire().await.unwrap();
-                    // The permit is automatically released when _permit is dropped
-
-                    match download_gist(&gist, &folder).await {
-                        Ok(_) => info!("Successfully downloaded gist: {}", gist.id),
-                        Err(e) => info!("Failed to download gist {}: {}", gist.id, e),
-                    }
-                });
-                handles.push(handle);
-            }
-
-            // Wait for all downloads to complete
-            for handle in handles {
-                handle.await?;
-            }
-
-            info!(
-                "Download complete: {} files downloaded to {}",
-                total_files,
-                abs_path.display()
-            );
-        }
+        } => handle_download(username, folder, concurrency, limit).await?,
         Commands::List { username, limit } => {
-            info!("Listing gists for user: {}", username);
-            let gists: Gists = list_gists(&username, Some(limit)).await?;
+            info!("Listing the first {:?} gists for user: {}", limit, username);
+            let gists: Gists = list_gists(&username, limit).await?;
             for gist in gists {
                 info!("{}", gist);
             }
         }
     }
+    Ok(())
+}
+
+async fn handle_download(
+    username: String,
+    folder: String,
+    concurrency: usize,
+    limit: Option<u32>,
+) -> Result<()> {
+    info!("Fetching gists for user: {username}");
+    let gists = list_gists(&username, limit).await?;
+    info!("Found {} gists", gists.len());
+
+    let abs_path = PathBuf::from(&folder)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(&folder));
+    
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut set = JoinSet::new();
+    
+    for gist in gists {
+        let sem = Arc::clone(&semaphore);
+        let folder = folder.clone();
+        set.spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
+            if let Err(e) = download_gist(&gist, &folder).await {
+                info!("Failed to download gist {}: {}", gist.id, e);
+                return;
+            }
+            info!("Successfully downloaded gist: {}", gist.id);
+        });
+    }
+
+    while let Some(res) = set.join_next().await {
+        res?;
+    }
+
+    info!(
+        "Download complete: {} files downloaded to {}", 
+        gists.iter().map(|g| g.files.len()).sum::<usize>(),
+        abs_path.display()
+    );
+
     Ok(())
 }

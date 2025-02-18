@@ -28,8 +28,8 @@ pub enum Commands {
         concurrency: usize,
 
         /// Maximum number of gists to download
-        #[arg(short, long, default_value_t = 10)]
-        limit: u32,
+        #[arg(short, long)]
+        limit: Option<u32>,
     },
     /// List gists for a specific user
     List {
@@ -38,7 +38,7 @@ pub enum Commands {
         username: String,
 
         /// Maximum number of gists to list
-        #[arg(short, long, default_value_t = 10)]
-        limit: u32,
+        #[arg(short, long)]
+        limit: Option<u32>,
     },
 }
